@@ -281,18 +281,43 @@ def internal_error(error):
 
 def init_database():
     """自動初始化資料庫"""
-    with app.app_context():
-        # 建立資料庫表格
-        db.create_all()
-        
-        # 檢查是否已有管理員帳號
-        if Admin.query.first() is None:
-            # 建立預設管理員帳號
-            admin = Admin(username='admin')
-            admin.set_password('admin123')
-            db.session.add(admin)
-            db.session.commit()
-            print("✓ 預設管理員帳號建立完成（使用者名稱: admin, 密碼: admin123）")
+    try:
+        with app.app_context():
+            # 確保資料庫目錄存在
+            db_path = app.config['SQLALCHEMY_DATABASE_URI'].replace('sqlite:///', '')
+            if db_path.startswith('/'):
+                db_dir = os.path.dirname(db_path)
+                if db_dir and not os.path.exists(db_dir):
+                    os.makedirs(db_dir)
+                    print(f"✓ 建立資料庫目錄: {db_dir}")
+
+            # 建立資料庫表格
+            # 使用 inspect 檢查表格是否存在，避免重複建立的日誌干擾
+            from sqlalchemy import inspect
+            inspector = inspect(db.engine)
+            
+            if not inspector.has_table("submissions"):
+                db.create_all()
+                print("✓ 資料庫表格建立完成")
+            else:
+                print("✓ 資料庫表格已存在")
+            
+            # 檢查是否已有管理員帳號
+            try:
+                if Admin.query.first() is None:
+                    # 建立預設管理員帳號
+                    admin = Admin(username='admin')
+                    admin.set_password('admin123')
+                    db.session.add(admin)
+                    db.session.commit()
+                    print("✓ 預設管理員帳號建立完成（使用者名稱: admin, 密碼: admin123）")
+            except Exception as e:
+                print(f"⚠️ 檢查/建立管理員帳號時發生錯誤: {str(e)}")
+                # 嘗試 rollback 以防 session 處於錯誤狀態
+                db.session.rollback()
+                
+    except Exception as e:
+        print(f"❌ 資料庫初始化失敗: {str(e)}")
 
 
 # ============== 啟動應用 ==============
