@@ -133,9 +133,10 @@
                                     <td>{{ submission.upload_time.strftime('%Y-%m-%d %H:%M') }}</td>
                                     <td><small>{{ submission.ip_address or 'N/A' }}</small></td>
                                     <td class="text-center">
-                                        <a href="{{ url_for('admin_download', submission_id=submission.id) }}" 
+                                        <a href="{{ submission.file_url }}" 
                                            class="btn btn-sm btn-primary" 
-                                           title="下載">
+                                           title="下載"
+                                           target="_blank">
                                             <i class="bi bi-download"></i>
                                         </a>
                                         <form method="POST" 

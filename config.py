@@ -7,10 +7,8 @@ class Config:
     BASE_DIR = os.path.abspath(os.path.dirname(__file__))
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
     
-    # 資料庫設定
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
-        'sqlite:///' + os.path.join(BASE_DIR, 'workshop.db')
-    SQLALCHEMY_TRACK_MODIFICATIONS = False
+    # 資料庫設定 (移除 SQL設定)
+    # Firebase 設定將在 app.py 中處理
     
     # 檔案上傳設定
     UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')

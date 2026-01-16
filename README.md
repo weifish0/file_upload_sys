@@ -80,25 +80,39 @@ python app.py
 ## 技術規格
 
 - **後端**：Python Flask
-- **資料庫**：SQLite
+- **資料庫**：Google Firebase (Firestore)
+- **檔案儲存**：Google Firebase Storage
 - **前端**：HTML + Bootstrap 5 + JavaScript
 - **身份驗證**：Flask-Login
-- **圖片處理**：Pillow（用於生成 OG 圖片）
 
-## 新功能（版本 1.1）
+## 安裝步驟
 
-### 🚀 自動資料庫初始化
-- 應用程式啟動時會自動初始化資料庫
-- 無需手動執行初始化腳本
-- 簡化部署流程
+### 1. 安裝 Python 依賴套件
 
-### 🌐 社交分享優化
-- 添加完整的 Open Graph (OG) meta 標籤
-- 分享到社交媒體時顯示精美預覽卡片
-- 支援 Facebook、LINE、Twitter 等平台
-- 自訂 Favicon 和 OG 分享圖片
+```bash
+pip install -r requirements.txt
+```
 
-詳細更新內容請參考 [CHANGELOG.md](CHANGELOG.md)
+### 2. Firebase 設定
+
+請參考 [FIREBASE_SETUP.md](FIREBASE_SETUP.md) 進行詳細設定。
+
+簡單來說：
+1. 下載 Firebase Service Account JSON。
+2. 命名為 `serviceAccountKey.json` 放在專案根目錄。
+
+### 3. 啟動應用程式
+
+```bash
+python app.py
+```
+
+## Zeabur 部署
+
+請設定以下環境變數：
+- `FIREBASE_CREDENTIALS`: Service Account JSON 的完整內容
+- `FIREBASE_STORAGE_BUCKET`: 例如 `your-project.appspot.com`
+- `SECRET_KEY`: 隨機字串
 
 ## 目錄結構
 

@@ -1,22 +1,101 @@
-"""親子資訊素養工作坊 - 檔案上傳系統"""
+"""親子資訊素養工作坊 - 檔案上傳系統 (Firebase 版)"""
 import os
+import json
+import base64
 from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, flash, send_file, jsonify
-from flask_login import LoginManager, login_user, logout_user, login_required, current_user
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
 from werkzeug.utils import secure_filename
-from werkzeug.security import generate_password_hash
+from werkzeug.security import generate_password_hash, check_password_hash
 import csv
 from io import StringIO
 
+import firebase_admin
+from firebase_admin import credentials, firestore, storage
 from config import Config
-from models import db, Submission, Admin
 
 # 初始化 Flask 應用
 app = Flask(__name__)
 app.config.from_object(Config)
 
-# 初始化擴展
-db.init_app(app)
+# ============== Firebase 初始化 ==============
+
+def init_firebase():
+    """初始化 Firebase Admin SDK"""
+    cred = None
+    
+    # 1. 嘗試從環境變數讀取 (Zeabur 部署用)
+    firebase_creds = os.environ.get('FIREBASE_CREDENTIALS')
+    if firebase_creds:
+        # 如果是 base64 編碼的 (有些平台需要)，先解碼
+        try:
+            if not firebase_creds.strip().startswith('{'):
+                decoded_bytes = base64.b64decode(firebase_creds)
+                creds_dict = json.loads(decoded_bytes.decode('utf-8'))
+            else:
+                creds_dict = json.loads(firebase_creds)
+            cred = credentials.Certificate(creds_dict)
+            print("✓ 已從環境變數載入 Firebase 憑證")
+        except Exception as e:
+            print(f"⚠️ 環境變數 Firebase 憑證解析失敗: {e}")
+
+    # 2. 如果環境變數失敗，嘗試從本地檔案讀取 (開發用)
+    if not cred and os.path.exists('serviceAccountKey.json'):
+        cred = credentials.Certificate('serviceAccountKey.json')
+        print("✓ 已從本地檔案載入 Firebase 憑證")
+
+    if cred:
+        try:
+            # 獲取 Storage Bucket 名稱 (從環境變數或預設)
+            bucket_name = os.environ.get('FIREBASE_STORAGE_BUCKET')
+            if not bucket_name and 'project_id' in cred.credential.service_account_email:
+                # 嘗試從憑證推斷 (project-id.appspot.com)
+                project_id = cred.credential.service_account_email.split('@')[0].split('.gserviceaccount')[0]
+                # 注意：這可能不準確，最好明確指定
+                # 通常 service account email 是: firebase-adminsdk-xxx@project-id.iam.gserviceaccount.com
+                # 但更可靠的是直接設定 FIREBASE_STORAGE_BUCKET
+                pass
+            
+            if not bucket_name:
+                 print("⚠️ 未設定 FIREBASE_STORAGE_BUCKET，檔案上傳功能可能無法運作")
+
+            firebase_admin.initialize_app(cred, {
+                'storageBucket': bucket_name
+            })
+            print("✓ Firebase 初始化成功")
+            return firestore.client()
+        except ValueError:
+            # 已經初始化過
+            return firestore.client()
+        except Exception as e:
+            print(f"❌ Firebase 初始化錯誤: {e}")
+            return None
+    else:
+        print("❌ 找不到 Firebase 憑證 (FIREBASE_CREDENTIALS env 或 serviceAccountKey.json)")
+        return None
+
+# 初始化資料庫客戶端
+db = init_firebase()
+
+# ============== 使用者模型 (適配 Flask-Login) ==============
+
+class AdminUser(UserMixin):
+    def __init__(self, uid, username, password_hash):
+        self.id = uid
+        self.username = username
+        self.password_hash = password_hash
+    
+    @staticmethod
+    def get(user_id):
+        if not db: return None
+        doc = db.collection('admins').document(user_id).get()
+        if doc.exists:
+            data = doc.to_dict()
+            return AdminUser(user_id, data['username'], data['password_hash'])
+        return None
+
+# ============== Login Manager ==============
+
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'admin_login'
@@ -24,91 +103,125 @@ login_manager.login_message = '請先登入以訪問此頁面'
 
 @login_manager.user_loader
 def load_user(user_id):
-    """載入使用者"""
-    return Admin.query.get(int(user_id))
+    return AdminUser.get(user_id)
 
+
+# ============== 輔助函數 ==============
 
 def allowed_file(filename):
-    """檢查檔案是否允許上傳"""
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
+def format_file_size(size):
+    for unit in ['B', 'KB', 'MB', 'GB']:
+        if size < 1024.0:
+            return f"{size:.2f} {unit}"
+        size /= 1024.0
+    return f"{size:.2f} TB"
 
-def get_file_size(file):
-    """獲取檔案大小"""
-    file.seek(0, 2)  # 移動到檔案末尾
-    size = file.tell()
-    file.seek(0)  # 重置到檔案開頭
-    return size
+def ensure_admin_exists():
+    """確保預設管理員存在 (類似 init_db)"""
+    if not db: return
+    
+    admins_ref = db.collection('admins')
+    # 檢查是否為空
+    docs = list(admins_ref.limit(1).stream())
+    
+    if not docs:
+        print("建立預設管理員帳號...")
+        # 建立預設管理員
+        new_admin = {
+            'username': 'admin',
+            'password_hash': generate_password_hash('admin123'),
+            'created_at': datetime.utcnow()
+        }
+        admins_ref.add(new_admin)
+        print("✓ 預設管理員帳號建立完成 (admin / admin123)")
+
+# 啟動時檢查
+if db:
+    ensure_admin_exists()
 
 
 # ============== 公開路由（家長使用） ==============
 
 @app.route('/')
 def index():
-    """家長表單頁面"""
     return render_template('index.html')
 
 
 @app.route('/submit', methods=['POST'])
 def submit():
-    """處理表單提交"""
+    if not db:
+        flash('系統錯誤：資料庫未連接', 'danger')
+        return redirect(url_for('index'))
+
     try:
-        # 獲取表單數據
         child_name = request.form.get('child_name', '').strip()
         parent_info = request.form.get('parent_info', '').strip()
         
-        # 驗證必填欄位
         if not child_name:
             flash('請填寫孩子姓名', 'danger')
             return redirect(url_for('index'))
         
-        # 檢查檔案
         if 'file' not in request.files:
             flash('請選擇要上傳的檔案', 'danger')
             return redirect(url_for('index'))
         
         file = request.files['file']
-        
         if file.filename == '':
             flash('請選擇要上傳的檔案', 'danger')
             return redirect(url_for('index'))
         
         if not allowed_file(file.filename):
-            flash('不支援的檔案類型，請上傳 PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX, TXT, JPG, JPEG, PNG, GIF, ZIP, RAR 格式', 'danger')
+            flash('不支援的檔案類型', 'danger')
             return redirect(url_for('index'))
         
-        # 獲取檔案大小
-        file_size = get_file_size(file)
-        
-        # 生成安全的檔案名稱
+        # 檔案處理
         original_filename = secure_filename(file.filename)
+        file.seek(0, 2)
+        file_size = file.tell()
+        file.seek(0)
+        
+        # 上傳到 Firebase Storage
+        bucket = storage.bucket()
+        if not bucket:
+            flash('系統錯誤：無法連接到雲端儲存', 'danger')
+            return redirect(url_for('index'))
+
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"{timestamp}_{original_filename}"
+        blob_name = f"uploads/{timestamp}_{original_filename}"
+        blob = bucket.blob(blob_name)
         
-        # 儲存檔案
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(file_path)
+        # 設定 metadata (解決中文檔名問題)
+        blob.content_disposition = f'attachment; filename*=utf-8\'\'{original_filename}'
         
-        # 建立資料庫記錄
-        submission = Submission(
-            child_name=child_name,
-            parent_info=parent_info,
-            file_path=file_path,
-            original_filename=original_filename,
-            file_size=file_size,
-            ip_address=request.remote_addr
-        )
+        blob.upload_from_file(file, content_type=file.content_type)
         
-        db.session.add(submission)
-        db.session.commit()
+        # 讓檔案公開可讀取 (或使用 signed url)
+        blob.make_public()
+        file_url = blob.public_url
+        
+        # 寫入 Firestore
+        submission_data = {
+            'child_name': child_name,
+            'parent_info': parent_info,
+            'file_url': file_url,
+            'storage_path': blob_name, # 用於刪除
+            'original_filename': original_filename,
+            'file_size': file_size,
+            'upload_time': datetime.utcnow(),
+            'ip_address': request.remote_addr
+        }
+        
+        db.collection('submissions').add(submission_data)
         
         flash('檔案上傳成功！感謝您的參與 🎉', 'success')
         return redirect(url_for('index'))
         
     except Exception as e:
         app.logger.error(f"上傳錯誤: {str(e)}")
-        flash('上傳過程發生錯誤，請稍後再試', 'danger')
+        flash(f'上傳失敗: {str(e)}', 'danger')
         return redirect(url_for('index'))
 
 
@@ -116,7 +229,6 @@ def submit():
 
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
-    """管理員登入"""
     if current_user.is_authenticated:
         return redirect(url_for('admin_dashboard'))
     
@@ -124,14 +236,20 @@ def admin_login():
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
         
-        admin = Admin.query.filter_by(username=username).first()
+        if db:
+            # 查詢 Firestore
+            docs = db.collection('admins').where('username', '==', username).limit(1).stream()
+            admin_doc = next(docs, None)
+            
+            if admin_doc:
+                data = admin_doc.to_dict()
+                if check_password_hash(data['password_hash'], password):
+                    user = AdminUser(admin_doc.id, data['username'], data['password_hash'])
+                    login_user(user)
+                    flash('登入成功！', 'success')
+                    return redirect(url_for('admin_dashboard'))
         
-        if admin and admin.check_password(password):
-            login_user(admin)
-            flash('登入成功！', 'success')
-            return redirect(url_for('admin_dashboard'))
-        else:
-            flash('使用者名稱或密碼錯誤', 'danger')
+        flash('使用者名稱或密碼錯誤', 'danger')
     
     return render_template('login.html')
 
@@ -139,7 +257,6 @@ def admin_login():
 @app.route('/admin/logout')
 @login_required
 def admin_logout():
-    """管理員登出"""
     logout_user()
     flash('已成功登出', 'success')
     return redirect(url_for('index'))
@@ -148,110 +265,142 @@ def admin_logout():
 @app.route('/admin/dashboard')
 @login_required
 def admin_dashboard():
-    """管理後台"""
-    # 獲取分頁參數
+    if not db:
+        flash('資料庫連接失敗', 'danger')
+        return redirect(url_for('index'))
+
+    # 簡單分頁邏輯 (Firestore 分頁較複雜，這裡簡化為獲取全部後在內存分頁)
+    # 註：如果數據量很大，這不是最佳實踐
+    
     page = request.args.get('page', 1, type=int)
     search = request.args.get('search', '', type=str)
     
-    # 查詢提交記錄
-    query = Submission.query
+    # 獲取所有 submissions
+    submissions_ref = db.collection('submissions').order_by('upload_time', direction=firestore.Query.DESCENDING)
+    all_docs = list(submissions_ref.stream())
     
-    if search:
-        query = query.filter(
-            (Submission.child_name.contains(search)) |
-            (Submission.parent_info.contains(search)) |
-            (Submission.original_filename.contains(search))
-        )
+    results = []
+    total_size = 0
     
-    # 按上傳時間降序排列
-    query = query.order_by(Submission.upload_time.desc())
+    for doc in all_docs:
+        data = doc.to_dict()
+        data['id'] = doc.id
+        
+        # 搜尋過濾
+        if search:
+            if (search.lower() not in data.get('child_name', '').lower() and
+                search.lower() not in data.get('parent_info', '').lower() and
+                search.lower() not in data.get('original_filename', '').lower()):
+                continue
+        
+        # 格式化
+        data['formatted_size'] = format_file_size(data.get('file_size', 0))
+        total_size += data.get('file_size', 0)
+        
+        # 處理時間 (Firestore Timestamp 轉 Python datetime)
+        if hasattr(data.get('upload_time'), 'strftime'):
+             pass # 已經是 datetime
+        else:
+             # 如果是字串或其他
+             pass
+
+        results.append(data)
+
+    # 內存分頁
+    per_page = app.config['ITEMS_PER_PAGE']
+    total_items = len(results)
+    total_pages = (total_items + per_page - 1) // per_page
     
-    # 分頁
-    pagination = query.paginate(
-        page=page,
-        per_page=app.config['ITEMS_PER_PAGE'],
-        error_out=False
-    )
+    start = (page - 1) * per_page
+    end = start + per_page
+    paginated_items = results[start:end]
     
-    submissions = pagination.items
-    
-    # 統計數據
-    total_submissions = Submission.query.count()
-    total_size = db.session.query(db.func.sum(Submission.file_size)).scalar() or 0
+    # 模擬 Pagination 物件以適配模板
+    class MockPagination:
+        def __init__(self, items, page, pages, total):
+            self.items = items
+            self.page = page
+            self.pages = pages
+            self.total = total
+            self.has_prev = page > 1
+            self.has_next = page < pages
+            self.prev_num = page - 1
+            self.next_num = page + 1
+            
+        def iter_pages(self, left_edge=1, right_edge=1, left_current=2, right_current=2):
+            # 簡單實作
+            for i in range(1, self.pages + 1):
+                yield i
+
+    pagination = MockPagination(paginated_items, page, total_pages, total_items)
     
     return render_template(
         'dashboard.html',
-        submissions=submissions,
+        submissions=paginated_items,
         pagination=pagination,
         search=search,
-        total_submissions=total_submissions,
+        total_submissions=total_items,
         total_size=total_size
     )
 
 
-@app.route('/admin/download/<int:submission_id>')
-@login_required
-def admin_download(submission_id):
-    """下載檔案"""
-    submission = Submission.query.get_or_404(submission_id)
-    
-    if not os.path.exists(submission.file_path):
-        flash('檔案不存在', 'danger')
-        return redirect(url_for('admin_dashboard'))
-    
-    return send_file(
-        submission.file_path,
-        as_attachment=True,
-        download_name=submission.original_filename
-    )
-
-
-@app.route('/admin/delete/<int:submission_id>', methods=['POST'])
+@app.route('/admin/delete/<submission_id>', methods=['POST'])
 @login_required
 def admin_delete(submission_id):
-    """刪除提交記錄"""
-    submission = Submission.query.get_or_404(submission_id)
+    if not db: return jsonify({'error': 'No DB'}), 500
+
+    doc_ref = db.collection('submissions').document(submission_id)
+    doc = doc_ref.get()
     
-    # 刪除檔案
-    if os.path.exists(submission.file_path):
-        os.remove(submission.file_path)
-    
-    # 刪除資料庫記錄
-    db.session.delete(submission)
-    db.session.commit()
-    
-    flash('記錄已刪除', 'success')
+    if doc.exists:
+        data = doc.to_dict()
+        # 刪除 Storage 中的檔案
+        storage_path = data.get('storage_path')
+        if storage_path:
+            try:
+                bucket = storage.bucket()
+                blob = bucket.blob(storage_path)
+                blob.delete()
+            except Exception as e:
+                print(f"刪除 Storage 檔案失敗: {e}")
+        
+        # 刪除 Firestore 記錄
+        doc_ref.delete()
+        flash('記錄已刪除', 'success')
+    else:
+        flash('記錄不存在', 'danger')
+        
     return redirect(url_for('admin_dashboard'))
 
 
 @app.route('/admin/export')
 @login_required
 def admin_export():
-    """匯出所有記錄為 CSV"""
-    submissions = Submission.query.order_by(Submission.upload_time.desc()).all()
+    if not db: return "Database error", 500
     
-    # 建立 CSV
+    submissions = db.collection('submissions').order_by('upload_time', direction=firestore.Query.DESCENDING).stream()
+    
     output = StringIO()
     writer = csv.writer(output)
+    writer.writerow(['孩子姓名', '家長資訊', '檔案名稱', '檔案連結', '檔案大小(Bytes)', '上傳時間', 'IP位址'])
     
-    # 寫入標題
-    writer.writerow(['編號', '孩子姓名', '家長資訊', '檔案名稱', '檔案大小', '上傳時間', 'IP位址'])
-    
-    # 寫入數據
-    for sub in submissions:
+    for doc in submissions:
+        data = doc.to_dict()
+        upload_time = data.get('upload_time')
+        if hasattr(upload_time, 'strftime'):
+            upload_time = upload_time.strftime('%Y-%m-%d %H:%M:%S')
+            
         writer.writerow([
-            sub.id,
-            sub.child_name,
-            sub.parent_info or '',
-            sub.original_filename,
-            sub.format_file_size(),
-            sub.upload_time.strftime('%Y-%m-%d %H:%M:%S'),
-            sub.ip_address or ''
+            data.get('child_name'),
+            data.get('parent_info'),
+            data.get('original_filename'),
+            data.get('file_url'),
+            data.get('file_size'),
+            upload_time,
+            data.get('ip_address')
         ])
     
-    # 準備回應
     output.seek(0)
-    
     from flask import Response
     return Response(
         output.getvalue(),
@@ -261,74 +410,19 @@ def admin_export():
         }
     )
 
-
 # ============== 錯誤處理 ==============
 
 @app.errorhandler(404)
 def not_found(error):
-    """404 錯誤頁面"""
     return render_template('404.html'), 404
-
 
 @app.errorhandler(500)
 def internal_error(error):
-    """500 錯誤頁面"""
-    db.session.rollback()
     return render_template('500.html'), 500
 
 
-# ============== 資料庫初始化 ==============
-
-def init_database():
-    """自動初始化資料庫"""
-    try:
-        with app.app_context():
-            # 確保資料庫目錄存在
-            db_path = app.config['SQLALCHEMY_DATABASE_URI'].replace('sqlite:///', '')
-            if db_path.startswith('/'):
-                db_dir = os.path.dirname(db_path)
-                if db_dir and not os.path.exists(db_dir):
-                    os.makedirs(db_dir)
-                    print(f"✓ 建立資料庫目錄: {db_dir}")
-
-            # 建立資料庫表格
-            # 使用 inspect 檢查表格是否存在，避免重複建立的日誌干擾
-            from sqlalchemy import inspect
-            inspector = inspect(db.engine)
-            
-            if not inspector.has_table("submissions"):
-                db.create_all()
-                print("✓ 資料庫表格建立完成")
-            else:
-                print("✓ 資料庫表格已存在")
-            
-            # 檢查是否已有管理員帳號
-            try:
-                if Admin.query.first() is None:
-                    # 建立預設管理員帳號
-                    admin = Admin(username='admin')
-                    admin.set_password('admin123')
-                    db.session.add(admin)
-                    db.session.commit()
-                    print("✓ 預設管理員帳號建立完成（使用者名稱: admin, 密碼: admin123）")
-            except Exception as e:
-                print(f"⚠️ 檢查/建立管理員帳號時發生錯誤: {str(e)}")
-                # 嘗試 rollback 以防 session 處於錯誤狀態
-                db.session.rollback()
-                
-    except Exception as e:
-        print(f"❌ 資料庫初始化失敗: {str(e)}")
-
-
-# ============== 啟動應用 ==============
-
 if __name__ == '__main__':
-    # 確保上傳目錄存在
-    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-    
-    # 自動初始化資料庫
-    init_database()
-    
-    # 啟動應用
+    # 注意：本地開發時，你需要下載 serviceAccountKey.json 並放在專案根目錄
+    # 或者是設定環境變數 FIREBASE_CREDENTIALS
+    print("啟動 Firebase 版應用程式...")
     app.run(debug=True, host='0.0.0.0', port=5002)
-
