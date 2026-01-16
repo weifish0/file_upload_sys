@@ -15,7 +15,48 @@ body {
 }
 
 .container {
-    max-width: 800px;
+    max-width: 1000px;
+}
+
+/* 電腦版樣式優化 */
+@media (min-width: 992px) {
+    body {
+        font-size: 18px;
+    }
+
+    .container {
+        max-width: 1200px;
+    }
+    
+    .form-control, .form-select, .btn {
+        font-size: 1.1rem;
+        padding: 15px;
+    }
+    
+    .form-label {
+        font-size: 1.2rem;
+        margin-bottom: 12px;
+    }
+    
+    .card-body {
+        padding: 50px;
+    }
+    
+    .card-header h2 {
+        font-size: 2.2rem;
+    }
+    
+    .file-upload-label {
+        padding: 40px;
+    }
+    
+    .file-upload-label i {
+        font-size: 32px;
+    }
+    
+    .file-upload-label span {
+        font-size: 1.2rem;
+    }
 }
 
 /* 卡片樣式 */

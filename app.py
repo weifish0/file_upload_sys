@@ -277,11 +277,32 @@ def internal_error(error):
     return render_template('500.html'), 500
 
 
+# ============== 資料庫初始化 ==============
+
+def init_database():
+    """自動初始化資料庫"""
+    with app.app_context():
+        # 建立資料庫表格
+        db.create_all()
+        
+        # 檢查是否已有管理員帳號
+        if Admin.query.first() is None:
+            # 建立預設管理員帳號
+            admin = Admin(username='admin')
+            admin.set_password('admin123')
+            db.session.add(admin)
+            db.session.commit()
+            print("✓ 預設管理員帳號建立完成（使用者名稱: admin, 密碼: admin123）")
+
+
 # ============== 啟動應用 ==============
 
 if __name__ == '__main__':
     # 確保上傳目錄存在
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+    
+    # 自動初始化資料庫
+    init_database()
     
     # 啟動應用
     app.run(debug=True, host='0.0.0.0', port=5002)

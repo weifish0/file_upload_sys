@@ -15,4 +15,5 @@ instance/
 *.log
 .vscode/
 .idea/
+generate_images.py
 
