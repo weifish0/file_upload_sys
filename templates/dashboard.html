@@ -129,8 +129,8 @@
                                         <i class="bi bi-file-earmark"></i>
                                         {{ submission.original_filename }}
                                     </td>
-                                    <td>{{ submission.format_file_size() }}</td>
-                                    <td>{{ submission.upload_time.strftime('%Y-%m-%d %H:%M') }}</td>
+                                    <td>{{ submission.formatted_size }}</td>
+                                    <td>{{ submission.upload_time.strftime('%Y-%m-%d %H:%M') if submission.upload_time and submission.upload_time.strftime else submission.upload_time }}</td>
                                     <td><small>{{ submission.ip_address or 'N/A' }}</small></td>
                                     <td class="text-center">
                                         <a href="{{ submission.file_url }}" 
