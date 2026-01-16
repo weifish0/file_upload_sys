@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block title %}檔案上傳 - 親子資訊素養工作坊{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6">
+            <div class="card">
+                <div class="card-header text-center">
+                    <i class="bi bi-cloud-upload-fill" style="font-size: 48px; margin-bottom: 10px;"></i>
+                    <h2>親子資訊素養工作坊</h2>
+                    <p class="mb-0">檔案上傳表單</p>
+                </div>
+                <div class="card-body">
+                    <!-- 提示訊息 -->
+                    {% with messages = get_flashed_messages(with_categories=true) %}
+                        {% if messages %}
+                            {% for category, message in messages %}
+                                <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                                    {{ message }}
+                                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                                </div>
+                            {% endfor %}
+                        {% endif %}
+                    {% endwith %}
+                    
+                    <form method="POST" action="{{ url_for('submit') }}" enctype="multipart/form-data">
+                        <!-- 孩子姓名 -->
+                        <div class="mb-4">
+                            <label for="child_name" class="form-label">
+                                <i class="bi bi-person-fill"></i> 孩子姓名 <span class="text-danger">*</span>
+                            </label>
+                            <input type="text" 
+                                   class="form-control" 
+                                   id="child_name" 
+                                   name="child_name" 
+                                   placeholder="請輸入孩子的姓名"
+                                   required>
+                        </div>
+                        
+                        <!-- 家長聯絡資訊 -->
+                        <div class="mb-4">
+                            <label for="parent_info" class="form-label">
+                                <i class="bi bi-telephone-fill"></i> 家長聯絡資訊（選填）
+                            </label>
+                            <input type="text" 
+                                   class="form-control" 
+                                   id="parent_info" 
+                                   name="parent_info" 
+                                   placeholder="電話或Email（方便聯繫時填寫）">
+                            <small class="form-text text-muted">
+                                例如：0912-345-678 或 email@example.com
+                            </small>
+                        </div>
+                        
+                        <!-- 檔案上傳 -->
+                        <div class="mb-4">
+                            <label class="form-label">
+                                <i class="bi bi-file-earmark-arrow-up-fill"></i> 上傳檔案 <span class="text-danger">*</span>
+                            </label>
+                            <div class="file-upload-wrapper">
+                                <input type="file" 
+                                       id="file" 
+                                       name="file" 
+                                       required 
+                                       accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.jpg,.jpeg,.png,.gif,.zip,.rar">
+                                <label for="file" class="file-upload-label">
+                                    <i class="bi bi-cloud-arrow-up"></i>
+                                    <span>點擊選擇檔案</span>
+                                </label>
+                            </div>
+                            <div class="file-name" style="display: none;"></div>
+                            <small class="form-text text-muted">
+                                <i class="bi bi-info-circle"></i> 
+                                支援格式：PDF, Word, Excel, PowerPoint, 圖片, 壓縮檔（最大 10MB）
+                            </small>
+                        </div>
+                        
+                        <!-- 送出按鈕 -->
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="bi bi-send-fill"></i> 送出表單
+                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                            </button>
+                        </div>
+                    </form>
+                    
+                    <!-- 說明文字 -->
+                    <div class="mt-4 p-3 bg-light rounded">
+                        <h6 class="mb-2"><i class="bi bi-lightbulb-fill text-warning"></i> 溫馨提醒</h6>
+                        <ul class="mb-0 small">
+                            <li>請確保檔案內容與親子資訊素養工作坊相關</li>
+                            <li>上傳的檔案將由管理員審閱</li>
+                            <li>如有問題，請聯繫工作坊負責人</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 管理員登入連結 -->
+            <div class="text-center mt-3">
+                <a href="{{ url_for('admin_login') }}" class="text-white text-decoration-none">
+                    <small><i class="bi bi-shield-lock"></i> 管理員登入</small>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

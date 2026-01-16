@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block title %}管理員登入 - 親子資訊素養工作坊{% endblock %}
+
+{% block content %}
+<div class="login-container">
+    <div class="login-header">
+        <i class="bi bi-shield-lock-fill"></i>
+        <h1>管理員登入</h1>
+    </div>
+    
+    <div class="card">
+        <div class="card-body">
+            <!-- 提示訊息 -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+            
+            <form method="POST" action="{{ url_for('admin_login') }}">
+                <!-- 使用者名稱 -->
+                <div class="mb-3">
+                    <label for="username" class="form-label">
+                        <i class="bi bi-person-circle"></i> 使用者名稱
+                    </label>
+                    <input type="text" 
+                           class="form-control" 
+                           id="username" 
+                           name="username" 
+                           placeholder="請輸入使用者名稱"
+                           required 
+                           autofocus>
+                </div>
+                
+                <!-- 密碼 -->
+                <div class="mb-4">
+                    <label for="password" class="form-label">
+                        <i class="bi bi-key-fill"></i> 密碼
+                    </label>
+                    <input type="password" 
+                           class="form-control" 
+                           id="password" 
+                           name="password" 
+                           placeholder="請輸入密碼"
+                           required>
+                </div>
+                
+                <!-- 登入按鈕 -->
+                <div class="d-grid">
+                    <button type="submit" class="btn btn-primary btn-lg">
+                        <i class="bi bi-box-arrow-in-right"></i> 登入
+                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                    </button>
+                </div>
+            </form>
+            
+            <!-- 返回首頁 -->
+            <div class="text-center mt-3">
+                <a href="{{ url_for('index') }}" class="text-decoration-none">
+                    <i class="bi bi-arrow-left"></i> 返回首頁
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+
+{% block title %}管理後台 - 親子資訊素養工作坊{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- 標題列 -->
+    <div class="dashboard-header">
+        <div>
+            <h2 class="mb-1"><i class="bi bi-speedometer2"></i> 管理後台</h2>
+            <p class="text-muted mb-0">歡迎回來，{{ current_user.username }}</p>
+        </div>
+        <div>
+            <a href="{{ url_for('admin_export') }}" class="btn btn-success me-2">
+                <i class="bi bi-download"></i> 匯出 CSV
+            </a>
+            <a href="{{ url_for('admin_logout') }}" class="btn btn-danger">
+                <i class="bi bi-box-arrow-right"></i> 登出
+            </a>
+        </div>
+    </div>
+    
+    <!-- 統計卡片 -->
+    <div class="row mb-4">
+        <div class="col-md-6 col-lg-3 mb-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <i class="bi bi-file-earmark-text-fill text-primary" style="font-size: 36px;"></i>
+                    <h3 class="mt-2 mb-0">{{ total_submissions }}</h3>
+                    <p class="text-muted mb-0">總提交數</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 col-lg-3 mb-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <i class="bi bi-hdd-fill text-success" style="font-size: 36px;"></i>
+                    <h3 class="mt-2 mb-0">{{ (total_size / 1024 / 1024) | round(2) }}</h3>
+                    <p class="text-muted mb-0">總大小 (MB)</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 col-lg-3 mb-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <i class="bi bi-calendar-check-fill text-info" style="font-size: 36px;"></i>
+                    <h3 class="mt-2 mb-0">{{ submissions | length }}</h3>
+                    <p class="text-muted mb-0">本頁顯示</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 col-lg-3 mb-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <i class="bi bi-people-fill text-warning" style="font-size: 36px;"></i>
+                    <h3 class="mt-2 mb-0">{{ pagination.pages }}</h3>
+                    <p class="text-muted mb-0">總頁數</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 提示訊息 -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+    
+    <!-- 搜尋列 -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="GET" action="{{ url_for('admin_dashboard') }}" class="row g-3">
+                <div class="col-md-10">
+                    <div class="input-group">
+                        <span class="input-group-text">
+                            <i class="bi bi-search"></i>
+                        </span>
+                        <input type="text" 
+                               class="form-control" 
+                               name="search" 
+                               id="searchInput"
+                               placeholder="搜尋孩子姓名、家長資訊或檔案名稱..."
+                               value="{{ search }}">
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-funnel"></i> 搜尋
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- 提交記錄表格 -->
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="bi bi-table"></i> 提交記錄</h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th style="width: 5%;">編號</th>
+                            <th style="width: 15%;">孩子姓名</th>
+                            <th style="width: 15%;">家長資訊</th>
+                            <th style="width: 20%;">檔案名稱</th>
+                            <th style="width: 10%;">檔案大小</th>
+                            <th style="width: 15%;">上傳時間</th>
+                            <th style="width: 10%;">IP位址</th>
+                            <th style="width: 10%;" class="text-center">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if submissions %}
+                            {% for submission in submissions %}
+                                <tr>
+                                    <td>{{ submission.id }}</td>
+                                    <td><strong>{{ submission.child_name }}</strong></td>
+                                    <td>{{ submission.parent_info or '未填寫' }}</td>
+                                    <td>
+                                        <i class="bi bi-file-earmark"></i>
+                                        {{ submission.original_filename }}
+                                    </td>
+                                    <td>{{ submission.format_file_size() }}</td>
+                                    <td>{{ submission.upload_time.strftime('%Y-%m-%d %H:%M') }}</td>
+                                    <td><small>{{ submission.ip_address or 'N/A' }}</small></td>
+                                    <td class="text-center">
+                                        <a href="{{ url_for('admin_download', submission_id=submission.id) }}" 
+                                           class="btn btn-sm btn-primary" 
+                                           title="下載">
+                                            <i class="bi bi-download"></i>
+                                        </a>
+                                        <form method="POST" 
+                                              action="{{ url_for('admin_delete', submission_id=submission.id) }}" 
+                                              style="display: inline;"
+                                              onsubmit="return confirm('確定要刪除這筆記錄嗎？');">
+                                            <button type="submit" 
+                                                    class="btn btn-sm btn-danger" 
+                                                    title="刪除">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="8" class="text-center py-5">
+                                    <i class="bi bi-inbox" style="font-size: 48px; color: #ccc;"></i>
+                                    <p class="text-muted mt-3">
+                                        {% if search %}
+                                            沒有找到符合「{{ search }}」的記錄
+                                        {% else %}
+                                            目前沒有任何提交記錄
+                                        {% endif %}
+                                    </p>
+                                </td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 分頁 -->
+    {% if pagination.pages > 1 %}
+        <nav aria-label="分頁導航" class="mt-4">
+            <ul class="pagination justify-content-center">
+                <!-- 上一頁 -->
+                <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+                    <a class="page-link" 
+                       href="{% if pagination.has_prev %}{{ url_for('admin_dashboard', page=pagination.prev_num, search=search) }}{% else %}#{% endif %}">
+                        <i class="bi bi-chevron-left"></i> 上一頁
+                    </a>
+                </li>
+                
+                <!-- 頁碼 -->
+                {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                    {% if page_num %}
+                        <li class="page-item {% if page_num == pagination.page %}active{% endif %}">
+                            <a class="page-link" 
+                               href="{{ url_for('admin_dashboard', page=page_num, search=search) }}">
+                                {{ page_num }}
+                            </a>
+                        </li>
+                    {% else %}
+                        <li class="page-item disabled">
+                            <span class="page-link">...</span>
+                        </li>
+                    {% endif %}
+                {% endfor %}
+                
+                <!-- 下一頁 -->
+                <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+                    <a class="page-link" 
+                       href="{% if pagination.has_next %}{{ url_for('admin_dashboard', page=pagination.next_num, search=search) }}{% else %}#{% endif %}">
+                        下一頁 <i class="bi bi-chevron-right"></i>
+                    </a>
+                </li>
+            </ul>
+        </nav>
+    {% endif %}
+    
+    <!-- 返回首頁 -->
+    <div class="text-center mt-4">
+        <a href="{{ url_for('index') }}" class="btn btn-outline-light">
+            <i class="bi bi-house-door"></i> 返回首頁
+        </a>
+    </div>
+</div>
+{% endblock %}
+

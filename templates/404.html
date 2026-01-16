@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}找不到頁面 - 404{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center align-items-center" style="min-height: 80vh;">
+        <div class="col-md-6 text-center">
+            <div class="card">
+                <div class="card-body py-5">
+                    <i class="bi bi-exclamation-triangle-fill text-warning" style="font-size: 100px;"></i>
+                    <h1 class="display-1 fw-bold mt-4">404</h1>
+                    <h3 class="mb-3">找不到頁面</h3>
+                    <p class="text-muted mb-4">
+                        抱歉，您要訪問的頁面不存在或已被移除。
+                    </p>
+                    <a href="{{ url_for('index') }}" class="btn btn-primary">
+                        <i class="bi bi-house-door"></i> 返回首頁
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
