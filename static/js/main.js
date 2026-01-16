@@ -7,9 +7,20 @@ document.addEventListener('DOMContentLoaded', function() {
     if (fileInput && fileLabel) {
         fileInput.addEventListener('change', function(e) {
             if (this.files && this.files.length > 0) {
-                const file = this.files[0];
-                const size = (file.size / 1024 / 1024).toFixed(2);
-                fileName.textContent = `已選擇：${file.name} (${size} MB)`;
+                let fileInfo = `已選擇 ${this.files.length} 個檔案：\n`;
+                let totalSize = 0;
+                
+                for(let i=0; i<this.files.length; i++) {
+                    const file = this.files[i];
+                    const size = (file.size / 1024 / 1024).toFixed(2);
+                    totalSize += file.size;
+                    fileInfo += `- ${file.name} (${size} MB)\n`;
+                }
+                
+                const totalSizeMB = (totalSize / 1024 / 1024).toFixed(2);
+                fileInfo += `\n總大小：${totalSizeMB} MB`;
+                
+                fileName.textContent = fileInfo;
                 fileName.style.display = 'block';
             } else {
                 fileName.style.display = 'none';

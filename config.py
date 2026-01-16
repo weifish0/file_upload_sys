@@ -14,9 +14,9 @@ class Config:
     UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
     MAX_CONTENT_LENGTH = 10 * 1024 * 1024  # 10MB 限制
     ALLOWED_EXTENSIONS = {
-        'pdf', 'doc', 'docx', 'xls', 'xlsx', 
+        'pdf', 'doc', 'docx',
         'ppt', 'pptx', 'txt', 'jpg', 'jpeg', 
-        'png', 'gif', 'zip', 'rar'
+        'png', 'zip', 'rar'
     }
     
     # 分頁設定

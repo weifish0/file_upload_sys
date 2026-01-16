@@ -13,6 +13,9 @@ from io import StringIO
 import firebase_admin
 from firebase_admin import credentials, firestore, storage
 from config import Config
+import dotenv
+
+dotenv.load_dotenv()
 
 # 初始化 Flask 應用
 app = Flask(__name__)
@@ -168,55 +171,77 @@ def submit():
             flash('請選擇要上傳的檔案', 'danger')
             return redirect(url_for('index'))
         
-        file = request.files['file']
-        if file.filename == '':
+        files = request.files.getlist('file')
+        
+        if not files or files[0].filename == '':
             flash('請選擇要上傳的檔案', 'danger')
             return redirect(url_for('index'))
-        
-        if not allowed_file(file.filename):
-            flash('不支援的檔案類型', 'danger')
-            return redirect(url_for('index'))
-        
-        # 檔案處理
-        original_filename = secure_filename(file.filename)
-        file.seek(0, 2)
-        file_size = file.tell()
-        file.seek(0)
-        
-        # 上傳到 Firebase Storage
+            
         bucket = storage.bucket()
         if not bucket:
             flash('系統錯誤：無法連接到雲端儲存', 'danger')
             return redirect(url_for('index'))
-
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        blob_name = f"uploads/{timestamp}_{original_filename}"
-        blob = bucket.blob(blob_name)
+            
+        success_count = 0
+        fail_count = 0
         
-        # 設定 metadata (解決中文檔名問題)
-        blob.content_disposition = f'attachment; filename*=utf-8\'\'{original_filename}'
+        for file in files:
+            if file.filename == '' or not allowed_file(file.filename):
+                fail_count += 1
+                continue
+                
+            try:
+                # 檔案處理
+                original_filename = secure_filename(file.filename)
+                file.seek(0, 2)
+                file_size = file.tell()
+                file.seek(0)
+                
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                # 加入隨機字串避免同一秒多檔名衝突
+                import random
+                import string
+                random_str = ''.join(random.choices(string.ascii_lowercase + string.digits, k=4))
+                blob_name = f"uploads/{timestamp}_{random_str}_{original_filename}"
+                
+                blob = bucket.blob(blob_name)
+                
+                # 設定 metadata (解決中文檔名問題)
+                blob.content_disposition = f'attachment; filename*=utf-8\'\'{original_filename}'
+                
+                blob.upload_from_file(file, content_type=file.content_type)
+                
+                # 讓檔案公開可讀取
+                blob.make_public()
+                file_url = blob.public_url
+                
+                # 寫入 Firestore
+                submission_data = {
+                    'child_name': child_name,
+                    'parent_info': parent_info,
+                    'file_url': file_url,
+                    'storage_path': blob_name, # 用於刪除
+                    'original_filename': original_filename,
+                    'file_size': file_size,
+                    'upload_time': datetime.utcnow(),
+                    'ip_address': request.remote_addr
+                }
+                
+                db.collection('submissions').add(submission_data)
+                success_count += 1
+                
+            except Exception as e:
+                print(f"單一檔案上傳失敗: {e}")
+                fail_count += 1
         
-        blob.upload_from_file(file, content_type=file.content_type)
-        
-        # 讓檔案公開可讀取 (或使用 signed url)
-        blob.make_public()
-        file_url = blob.public_url
-        
-        # 寫入 Firestore
-        submission_data = {
-            'child_name': child_name,
-            'parent_info': parent_info,
-            'file_url': file_url,
-            'storage_path': blob_name, # 用於刪除
-            'original_filename': original_filename,
-            'file_size': file_size,
-            'upload_time': datetime.utcnow(),
-            'ip_address': request.remote_addr
-        }
-        
-        db.collection('submissions').add(submission_data)
-        
-        flash('檔案上傳成功！感謝您的參與 🎉', 'success')
+        if success_count > 0:
+            msg = f'成功上傳 {success_count} 個檔案！感謝您的參與 🎉'
+            if fail_count > 0:
+                msg += f' (另有 {fail_count} 個檔案上傳失敗)'
+            flash(msg, 'success')
+        else:
+            flash('檔案上傳失敗，請檢查檔案格式或大小', 'danger')
+            
         return redirect(url_for('index'))
         
     except Exception as e:
