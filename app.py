@@ -8,7 +8,8 @@ from flask_login import LoginManager, login_user, logout_user, login_required, c
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 import csv
-from io import StringIO
+from io import StringIO, BytesIO
+import zipfile
 
 import firebase_admin
 from firebase_admin import credentials, firestore, storage
@@ -434,6 +435,69 @@ def admin_export():
             'Content-Disposition': f'attachment; filename=submissions_{datetime.now().strftime("%Y%m%d")}.csv'
         }
     )
+
+
+@app.route('/admin/download-all')
+@login_required
+def admin_download_all():
+    """下載所有檔案並打包成 ZIP"""
+    if not db: return "Database error", 500
+    
+    try:
+        bucket = storage.bucket()
+        submissions = db.collection('submissions').stream()
+        
+        # 建立記憶體中的 ZIP
+        memory_file = BytesIO()
+        with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
+            
+            # 用來處理重名檔案的計數器
+            filename_counter = {}
+            
+            for doc in submissions:
+                data = doc.to_dict()
+                storage_path = data.get('storage_path')
+                original_filename = data.get('original_filename', 'unknown')
+                child_name = data.get('child_name', 'unknown')
+                
+                # 建構 ZIP 內的檔名：孩子姓名_原始檔名
+                # 移除非法字元
+                safe_child_name = "".join([c for c in child_name if c.isalnum() or c in (' ', '-', '_')]).strip()
+                zip_filename = f"{safe_child_name}_{original_filename}"
+                
+                # 處理重名
+                if zip_filename in filename_counter:
+                    filename_counter[zip_filename] += 1
+                    name, ext = os.path.splitext(zip_filename)
+                    zip_filename = f"{name}_{filename_counter[zip_filename]}{ext}"
+                else:
+                    filename_counter[zip_filename] = 0
+                
+                if storage_path:
+                    try:
+                        blob = bucket.blob(storage_path)
+                        # 下載檔案內容到記憶體
+                        file_content = blob.download_as_bytes()
+                        # 寫入 ZIP
+                        zf.writestr(zip_filename, file_content)
+                    except Exception as e:
+                        print(f"下載檔案失敗 {storage_path}: {e}")
+                        # 可以選擇寫入一個錯誤文字檔到 ZIP 中
+                        zf.writestr(f"ERROR_{zip_filename}.txt", f"Download failed: {str(e)}")
+
+        memory_file.seek(0)
+        
+        return send_file(
+            memory_file,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name=f'all_files_{datetime.now().strftime("%Y%m%d_%H%M")}.zip'
+        )
+        
+    except Exception as e:
+        app.logger.error(f"打包下載失敗: {str(e)}")
+        flash(f'打包下載失敗: {str(e)}', 'danger')
+        return redirect(url_for('admin_dashboard'))
 
 # ============== 錯誤處理 ==============
 
