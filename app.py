@@ -193,7 +193,9 @@ def submit():
                 
             try:
                 # 檔案處理
-                original_filename = secure_filename(file.filename)
+                # 保留原始中文檔名，只做基本路徑清理
+                original_filename = os.path.basename(file.filename)
+                
                 file.seek(0, 2)
                 file_size = file.tell()
                 file.seek(0)
@@ -203,12 +205,26 @@ def submit():
                 import random
                 import string
                 random_str = ''.join(random.choices(string.ascii_lowercase + string.digits, k=4))
-                blob_name = f"uploads/{timestamp}_{random_str}_{original_filename}"
+                
+                # 為了避免 Storage 路徑問題，blob_name 使用安全編碼後的名稱
+                # 這裡使用 secure_filename 確保路徑安全 (它會移除中文，但沒關係，blob_name 只是內部路徑)
+                # 如果 secure_filename 後變空 (例如純中文檔名)，給一個預設值
+                safe_name = secure_filename(original_filename)
+                if not safe_name:
+                    safe_name = "file" + os.path.splitext(original_filename)[1]
+                
+                blob_name = f"uploads/{timestamp}_{random_str}_{safe_name}"
                 
                 blob = bucket.blob(blob_name)
                 
-                # 設定 metadata (解決中文檔名問題)
-                blob.content_disposition = f'attachment; filename*=utf-8\'\'{original_filename}'
+                # 設定 metadata，確保下載時瀏覽器能看到正確的中文檔名
+                try:
+                    from urllib.parse import quote
+                    encoded_filename = quote(original_filename)
+                    blob.content_disposition = f"attachment; filename*=utf-8''{encoded_filename}"
+                    blob.metadata = {'original_filename': original_filename}
+                except Exception as e:
+                    print(f"Metadata 設定警告: {e}")
                 
                 blob.upload_from_file(file, content_type=file.content_type)
                 
